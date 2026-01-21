@@ -10,46 +10,49 @@
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
 </head>
+
 <style>
-* {
-box-sizing: border-box;
+    * {
+  box-sizing: border-box;
 }
 
 body {
-margin: 0;
-overflow: hidden;
-background: black;
-font-family: Arial, sans-serif;
+  margin: 0;
+  overflow: hidden;
+  background: black;
+  font-family: Arial, sans-serif;
 }
 
 video,
 canvas {
-position: absolute;
-width: 100vw;
-height: 100vh;
-object-fit: cover;
+  position: absolute;
+  width: 100vw;
+  height: 100vh;
+  object-fit: cover;
 }
 
 .frame {
-position: absolute;
-width: 320px;
-height: 320px;
-border: 3px dashed rgba(255, 255, 255, 0.8);
-border-radius: 20px;
-top: 50%;
-left: 50%;
-transform: translate(-50%, -50%);
+  position: absolute;
+  width: 320px;
+  height: 320px;
+  border: 3px dashed rgba(255, 255, 255, 0.8);
+  border-radius: 20px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
 }
 
 .hint {
-position: absolute;
-bottom: 40px;
-width: 100%;
-text-align: center;
-color: white;
-font-size: 18px;
+  position: absolute;
+  bottom: 40px;
+  width: 100%;
+  text-align: center;
+  color: white;
+  font-size: 18px;
 }
+
 </style>
+
 <body>
     <video id="video" autoplay playsinline></video>
     <canvas id="canvas"></canvas>
@@ -188,16 +191,26 @@ font-size: 18px;
             ctx.restore();
         }
 
-        // камера
-        const camera = new Camera(video, {
-            onFrame: async () => {
-                await hands.send({ image: video });
-            },
-            width: 1280,
-            height: 720
-        });
+        // 📷 камера с основной (задней) камерой
+        navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { ideal: "environment" }, width: 1280, height: 720 }
+        })
+            .then(stream => {
+                video.srcObject = stream;
 
-        camera.start();
+                // интеграция с MediaPipe Camera
+                const cameraMP = new Camera(video, {
+                    onFrame: async () => {
+                        await hands.send({ image: video });
+                    }
+                });
+                cameraMP.start();
+            })
+            .catch(err => {
+                console.error("Ошибка камеры:", err);
+                alert("Не удалось открыть камеру. Разрешите доступ или используйте Chrome.");
+            });
 
 </script>
+
 </html>
