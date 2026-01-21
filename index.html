@@ -64,152 +64,155 @@ canvas {
 </body>
 
 <script>
-    const video = document.getElementById("video");
-        const canvas = document.getElementById("canvas");
-        const ctx = canvas.getContext("2d");
-        const hint = document.getElementById("hint");
+  const video = document.getElementById("video");
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+    const hint = document.getElementById("hint");
 
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
 
-        // рамка (нормализованные координаты 0..1)
-        const frame = {
-            xMin: 0.35,
-            xMax: 0.65,
-            yMin: 0.25,
-            yMax: 0.65
-        };
+    // рамка (немного больше для теста)
+    const frame = {
+        xMin: 0.3,
+        xMax: 0.7,
+        yMin: 0.2,
+        yMax: 0.7
+    };
 
-        let stableTime = 0;
-        let lastPalm = null;
-        let photoTaken = false;
-        let savedLandmarks = null;
+    let stableTime = 0;
+    let lastPalm = null;
+    let photoTaken = false;
+    let savedLandmarks = null;
 
-        // MediaPipe Hands
-        const hands = new Hands({
-            locateFile: file =>
-                `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
-        });
+    // MediaPipe Hands
+    const hands = new Hands({
+        locateFile: file =>
+            `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+    });
 
-        hands.setOptions({
-            maxNumHands: 1,
-            modelComplexity: 1,
-            minDetectionConfidence: 0.7,
-            minTrackingConfidence: 0.7
-        });
+    hands.setOptions({
+        maxNumHands: 1,
+        modelComplexity: 1,
+        minDetectionConfidence: 0.7,
+        minTrackingConfidence: 0.7
+    });
 
-        hands.onResults(results => {
-            if (!results.multiHandLandmarks || photoTaken) return;
+    hands.onResults(results => {
+        if (!results.multiHandLandmarks || photoTaken) return;
 
-            const landmarks = results.multiHandLandmarks[0];
-            const palm = landmarks[9]; // центр ладони
+        const landmarks = results.multiHandLandmarks[0];
+        const palm = landmarks[9]; // центр ладони
 
-            const inFrame =
-                palm.x > frame.xMin &&
-                palm.x < frame.xMax &&
-                palm.y > frame.yMin &&
-                palm.y < frame.yMax;
+        // проверка, что рука в рамке
+        const inFrame =
+            palm.x > frame.xMin &&
+            palm.x < frame.xMax &&
+            palm.y > frame.yMin &&
+            palm.y < frame.yMax;
 
-            let movement = 1;
-            if (lastPalm) {
-                movement = Math.hypot(
-                    palm.x - lastPalm.x,
-                    palm.y - lastPalm.y
-                );
-            }
-
-            if (inFrame && movement < 0.01) {
-                stableTime += 16;
-                hint.innerText = "Не двигайте руку…";
-            } else {
-                stableTime = 0;
-                hint.innerText = "Поместите руку в рамку";
-            }
-
-            lastPalm = palm;
-
-            if (stableTime > 700) {
-                capturePhoto(landmarks);
-            }
-        });
-
-        // 📸 автофото
-        function capturePhoto(landmarks) {
-            photoTaken = true;
-            savedLandmarks = landmarks;
-
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            drawTestRing();
-
-            hint.innerText = "Кольцо надето ✔️";
-            console.log("📸 Автофото сделано");
-        }
-
-        // 💍 тестовое кольцо (canvas)
-        function drawTestRing() {
-            if (!savedLandmarks) return;
-
-            // средний палец
-            const base = savedLandmarks[10];
-            const tip = savedLandmarks[12];
-
-            const x = base.x * canvas.width;
-            const y = base.y * canvas.height;
-
-            const angle = Math.atan2(
-                tip.y - base.y,
-                tip.x - base.x
+        // движение руки
+        let movement = 1;
+        if (lastPalm) {
+            movement = Math.hypot(
+                palm.x - lastPalm.x,
+                palm.y - lastPalm.y
             );
-
-            // ширина пальца
-            const left = savedLandmarks[9];
-            const right = savedLandmarks[13];
-            const fingerWidth =
-                Math.hypot(
-                    left.x - right.x,
-                    left.y - right.y
-                ) * canvas.width * 0.6;
-
-            ctx.save();
-            ctx.translate(x, y);
-            ctx.rotate(angle);
-
-            // золото
-            ctx.strokeStyle = "#d4af37";
-            ctx.lineWidth = fingerWidth * 0.25;
-            ctx.beginPath();
-            ctx.arc(0, 0, fingerWidth * 0.4, 0, Math.PI * 2);
-            ctx.stroke();
-
-            // блеск
-            ctx.strokeStyle = "rgba(255,255,255,0.5)";
-            ctx.lineWidth = fingerWidth * 0.08;
-            ctx.beginPath();
-            ctx.arc(0, 0, fingerWidth * 0.35, 0, Math.PI * 2);
-            ctx.stroke();
-
-            ctx.restore();
         }
 
-        // 📷 камера с основной (задней) камерой
-        navigator.mediaDevices.getUserMedia({
-            video: { facingMode: { ideal: "environment" }, width: 1280, height: 720 }
-        })
-            .then(stream => {
-                video.srcObject = stream;
+        // автофото если рука в рамке и относительно стабильна
+        if (inFrame && movement < 0.03) { // увеличен порог движения
+            stableTime += 16;
+            hint.innerText = "Не двигайте руку…";
+        } else {
+            stableTime = 0;
+            hint.innerText = "Поместите руку в рамку";
+        }
 
-                // интеграция с MediaPipe Camera
-                const cameraMP = new Camera(video, {
-                    onFrame: async () => {
-                        await hands.send({ image: video });
-                    }
-                });
-                cameraMP.start();
-            })
-            .catch(err => {
-                console.error("Ошибка камеры:", err);
-                alert("Не удалось открыть камеру. Разрешите доступ или используйте Chrome.");
+        lastPalm = palm;
+
+        // уменьшено время ожидания
+        if (stableTime > 400) { // раньше было 700
+            console.log("Автофото срабатывает", landmarks);
+            capturePhoto(landmarks);
+        }
+    });
+
+    // 📸 автофото
+    function capturePhoto(landmarks) {
+        if (photoTaken) return;
+        photoTaken = true;
+        savedLandmarks = landmarks;
+
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        drawTestRing();
+
+        hint.innerText = "Кольцо надето ✔️";
+        console.log("📸 Автофото сделано");
+    }
+
+    // 💍 тестовое кольцо (canvas)
+    function drawTestRing() {
+        if (!savedLandmarks) return;
+
+        const base = savedLandmarks[10];
+        const tip = savedLandmarks[12];
+
+        const x = base.x * canvas.width;
+        const y = base.y * canvas.height;
+
+        const angle = Math.atan2(
+            tip.y - base.y,
+            tip.x - base.x
+        );
+
+        const left = savedLandmarks[9];
+        const right = savedLandmarks[13];
+        const fingerWidth =
+            Math.hypot(
+                left.x - right.x,
+                left.y - right.y
+            ) * canvas.width * 0.6;
+
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(angle);
+
+        // золото
+        ctx.strokeStyle = "#d4af37";
+        ctx.lineWidth = fingerWidth * 0.25;
+        ctx.beginPath();
+        ctx.arc(0, 0, fingerWidth * 0.4, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // блеск
+        ctx.strokeStyle = "rgba(255,255,255,0.5)";
+        ctx.lineWidth = fingerWidth * 0.08;
+        ctx.beginPath();
+        ctx.arc(0, 0, fingerWidth * 0.35, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.restore();
+    }
+
+    // 📷 камера с основной (задней) камерой
+    navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" }, width: 1280, height: 720 }
+    })
+        .then(stream => {
+            video.srcObject = stream;
+
+            const cameraMP = new Camera(video, {
+                onFrame: async () => {
+                    await hands.send({ image: video });
+                }
             });
+            cameraMP.start();
+        })
+        .catch(err => {
+            console.error("Ошибка камеры:", err);
+            alert("Не удалось открыть камеру. Разрешите доступ или используйте Chrome.");
+        });
 
 </script>
 
